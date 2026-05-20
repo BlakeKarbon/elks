@@ -357,6 +357,10 @@ static int Console_ioctl(struct tty *tty, int cmd, char *arg)
                 nosound();
         }
         return 0;
+#ifdef CONFIG_AUDIO
+    case KIOCSNDSEQ:
+        return audio_seq_ioctl(arg);
+#endif
     case TCSETS:
     case TCSETSW:
     case TCSETSF:

@@ -94,8 +94,10 @@ pid_t do_fork(int virtual)
                 } else {
                     t->mm[j] = seg_dup(s);
                     if (t->mm[j] == 0) {
-                        for (k = 0; k < j; k++)
-                            seg_put(t->mm[k]);
+                        for (k = 0; k < j; k++) {
+                            if (t->mm[k])
+                                seg_put(t->mm[k]);
+                        }
                         t->state = TASK_UNUSED;
                         task_slots_unused++;
                         next_task_slot = t;
@@ -121,6 +123,8 @@ pid_t do_fork(int virtual)
     t->fs.root->i_count++;
     t->fs.pwd->i_count++;
 
+    t->signal = 0;
+    t->timeout = 0;
     t->exit_status = 0;
 
     t->ppid = current->pid;

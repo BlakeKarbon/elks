@@ -11,18 +11,23 @@
 # Currently supported projects are:
 #       Name            Compiler        Desc
 #       microwindows    ia16-elf-gcc    Nano-X Graphical Windowing Environment
+#       microwindows_pc98 ia16-elf-gcc  Nano-X Graphical Windowing Environment for PC-98
+#       dcc             ia6-elf-gcc     DCC self-compiling C compiler for ELKS
 #       dflat           ia16-elf-gcc    D-Flat TUI memopad/library
 #       elkirc          ia16-elf-gcc    IRC for ELKS
+#       elksdigger      ia16-elf-gcc    Digger for ELKS
 #       owc_libc        OpenWatcom      ELKS C Library compiled by OWC
 #       owc_elkscmd     OpenWatcom      Some elkscmd/ programs compiled by OWC
 #       c86_toolchain   OpenWatcom/C86  C86 Toolchain, header files and examples
 #       c86_elkscmd     C86             Some elkscmd/ programs compiled by C86
-#       doom            OpenWatcom      Doom for ELKS
+#       elksdoom        OpenWatcom      Doom for ELKS
 #       ngircd_elks     OpenWatcom      IRC daemon for ELKS
 #       elks_viewer     OpenWatcom      Image viewers (BMP, PPM, JPG) for ELKS
+#       gzip            OpenWatcom      gzip compression utility
 #       lua             OpenWatcom      Lua 5.5 interpreter
 #       bobcat          OpenWatcom      Bobcat web browser (Lynx fork)
 #       kilomacs        OpenWatcom      Kilo-based editor with Emacs-style keybindings
+#       elksmoria       OpenWatcom      Roguelike game
 #
 # Some projects may require prerequisites.
 # To only build the C86 toolchain, use './buildext.sh owc_libc c86_toolchain'
@@ -143,6 +148,34 @@ microwindows()
     echo "Nano-X build complete"
 }
 
+microwindows_pc98()
+{
+    echo "Building Nano-X for PC-98..."
+    cd $TOPDIR/extapps
+    if [ ! -d microwindows ] ; then
+        git clone https://github.com/ghaerr/microwindows.git
+    fi
+    cd microwindows/src
+    git pull
+    make -f Makefile.elks clean
+    CONFIG_ARCH_PC98=y make -f Makefile.elks
+    echo "Nano-X for PC-98 build complete"
+}
+
+dcc()
+{
+    echo "Building DeSmet C Compiler (DCC)..."
+    cd $TOPDIR/extapps
+    if [ ! -d dcc ] ; then
+        git clone https://github.com/ghaerr/dcc
+    fi
+    cd dcc/src
+    git pull
+    make clean
+    make
+    echo "DCC build complete"
+}
+
 dflat()
 {
     echo "Building D-Flat..."
@@ -157,7 +190,7 @@ dflat()
     echo "D-Flat build complete"
 }
 
-doom()
+elksdoom()
 {
     echo "Building Doom..."
     cd $TOPDIR/extapps
@@ -181,6 +214,7 @@ ngircd_elks()
         git clone https://github.com/parabyte/ngircd-elks
     fi
     cd ngircd-elks
+    rm -f src/*/*.obj ngircd.os2
     git pull
     NGIRCD_DIR=$TOPDIR/extapps/ngircd-elks make -e -f Makefile.owc clean
     NGIRCD_DIR=$TOPDIR/extapps/ngircd-elks make -e -f Makefile.owc
@@ -192,13 +226,27 @@ elkirc()
     echo "Building elkirc..."
     cd $TOPDIR/extapps
     if [ ! -d elkirc ] ; then
-        git clone -b elks https://github.com/ghaerr/elkirc
+        git clone https://github.com/sepen/elkirc
     fi
     cd elkirc
     git pull
     make clean
     make ELKS=1
     echo "elkirc build complete"
+}
+
+elksdigger()
+{
+    echo "Building elksdigger..."
+    cd $TOPDIR/extapps
+    if [ ! -d ELKS-Digger ] ; then
+        git clone https://github.com/Vutshi/ELKS-Digger
+    fi
+    cd ELKS-Digger/elks
+    git pull
+    make clean
+    make
+    echo "elksdigger build complete"
 }
 
 elks_viewer()
@@ -213,6 +261,20 @@ elks_viewer()
     make -f Makefile.owc clean
     make -f Makefile.owc
     echo "elks-viewer build complete"
+}
+
+gzip()
+{
+    echo "Building gzip..."
+    cd $TOPDIR/extapps
+    if [ ! -d zlib ] ; then
+        git clone https://github.com/rafael2k/zlib zlib
+    fi
+    cd zlib
+    git pull
+    make -f elks/Makefile.elks clean
+    make -f elks/Makefile.elks
+    echo "gzip build complete"
 }
 
 lua()
@@ -258,23 +320,41 @@ kilomacs()
     echo "Kilomacs build complete"
 }
 
+elksmoria()
+{
+    echo "Building ELKSmoria..."
+    cd $TOPDIR/extapps
+    if [ ! -d elksmoria ] ; then
+        git clone https://github.com/tyama501/ELKSmoria.git elksmoria
+    fi
+    cd elksmoria
+    git pull
+    make clean
+    make
+    echo "ELKSmoria build complete"
+}
+
 # build all extapps repos
 make_all()
 {
     microwindows
+    dcc
     dflat
     elkirc
+    elksdigger
     if [ -n "$WATCOM" ] ; then
         owc_libc
         owc_elkscmd
         c86_toolchain
         c86_elkscmd
-        doom
+        elksdoom
         ngircd_elks
         elks_viewer
+        gzip
         lua
-        bobcat
+        #bobcat
         kilomacs
+        elksmoria
     fi
 }
 

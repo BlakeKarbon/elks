@@ -66,6 +66,12 @@
  *
  * 22 May 2025 - Greg Haerr
  * Program 8237 DMA controller external page register instead of using XMS bounce buffer
+ *
+ * 18 May 2026 - Greg Haerr
+ * Fix incorrect cache-hit and possible numsectors < 2 data corruption when
+ * TRACK_CACHE=y, CACHE_CYLINDER=0 and TRACK_SPLIT_BLK=0. This driver requires
+ * the FDC (or emulator) to implement auto-head increment when MT bit set.
+ * Currently MartyPC does not, so odd sector-per-track discs will produce I/O errors.
  */
 
 #include <linuxmt/config.h>
@@ -1219,9 +1225,17 @@ static void DFPROC redo_fd_request(void)
          */
         numsectors = floppy->sect + (floppy->sect & 1 && !head) - startsector;
 #else
-        /* partial track caching */
+        /* Partial track caching. NOTE: this will set numsectors to 1
+         * on odd sector-per-track floppies (i.e. 360k, 720k, 1200k).
+         */
         numsectors = floppy->sect - startsector;
 #endif
+        /* NOTE: TRACK_SPLIT_BLK #else option above requires this, should
+         * probably be combined into TRACK_SPLIT_BLK and option removed.
+         */
+        if (numsectors < req->rq_nr_sectors)
+            numsectors = req->rq_nr_sectors;
+
         if (numsectors > CACHE_SIZE)
             numsectors = CACHE_SIZE;
     }
@@ -1233,8 +1247,8 @@ static void DFPROC redo_fd_request(void)
 
     DEBUG("prep %u|%d,%d|%d-", start, seek_track, cache_drive, current_drive);
 
-    if (cache_drive == current_drive &&
-        start >= cache_start && start < cache_start + cache_numsectors) {
+    if (cache_drive == current_drive && start >= cache_start &&
+            start + req->rq_nr_sectors <= cache_start + cache_numsectors) {
         DEBUG("cache CHS %d/%d/%d\n", seek_track, head, sector);
         debug_cache2("CH %d ", start >> 1);
         cache_offset = (char *)(((start - cache_start) << 9) + CACHE_OFF);
@@ -1308,6 +1322,8 @@ static unsigned char * INITPROC find_base(int drive, int type)
 {
     unsigned char *base;
 
+    if (type == 15)
+        type = CMOS_360k;               /* use 360k if no CMOS */
     if (type > 0 && type <= CMOS_MAX) {
         base = probe_list[type - 1];
         printk("df%d is %s (%d)", drive, minor_types[*base].name, type);
@@ -1319,12 +1335,13 @@ static unsigned char * INITPROC find_base(int drive, int type)
 
 static void INITPROC config_types(void)
 {
+    unsigned int type_byte = CMOS_READ(0x10);
+
     printk("df: CMOS ");
-    if (!(base_type[0] = find_base(0, (CMOS_READ(0x10) >> 4) & 0xF)))
-        base_type[0] = find_base(0, CMOS_360k);   /* use 360k if no CMOS */
-    if (((CMOS_READ(0x14) >> 6) & 1) != 0) {
+    base_type[0] = find_base(0, (type_byte >> 4) & 0x0F);
+    if (type_byte & 0x0F) {
         printk(", ");
-        base_type[1] = find_base(1, CMOS_READ(0x10) & 0xF);
+        base_type[1] = find_base(1, type_byte & 0xF);
     }
 #ifdef CONFIG_FS_XMS_BUFFER
     if (xms_enabled) {
@@ -1444,18 +1461,17 @@ static void DFPROC floppy_deregister(void)
     set_irq();
 }
 
-/* Try to determine the floppy controller type */
-static int DFPROC get_fdc_version(void)
+/* Try to determine the floppy controller type; sets fdc_version global */
+static void DFPROC get_fdc_version(void)
 {
     int type = FDC_TYPE_8272A;
     const char *name;
 
     do_floppy = ignore_interrupt;
     output_byte(FD_VERSION);    /* get FDC version code */
-    if (result() != 1) {
-        printk("df: can't get FDC version\n");
-        return 0;
-    }
+    if (result() != 1)
+        reply_buffer[0] = 0;    /* NOTE: fixes unimplemented command in MartyPC */
+
     switch (reply_buffer[0]) {
     case 0x80:
         if (arch_cpu >= CPU_80286) {     /* PC/AT or better */
@@ -1470,10 +1486,11 @@ static int DFPROC get_fdc_version(void)
         name = "82077";
         break;
     default:
-        name = "Unknown";
+        name = "8272A assumed";
     }
     printk("df: direct floppy FDC %s (0x%x), irq %d, dma %d\n",
         name, reply_buffer[0], FLOPPY_IRQ, FLOPPY_DMA);
+    fdc_version = type;         /* must set version before reset_floppy called */
 
     /* Not all FDCs seem to be able to handle the version command
      * properly, so force a reset for the standard FDC clones,
@@ -1481,8 +1498,6 @@ static int DFPROC get_fdc_version(void)
      */
     initial_reset_flag = 1;
     reset_floppy();
-
-    return type;
 }
 
 static int DFPROC floppy_register(void)
@@ -1499,7 +1514,7 @@ static int DFPROC floppy_register(void)
         return err;
     }
 
-    fdc_version = get_fdc_version();
+    get_fdc_version();
     if (!fdc_version) return -EIO;
     return 0;
 }
